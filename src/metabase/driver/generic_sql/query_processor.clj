@@ -1,6 +1,7 @@
 (ns metabase.driver.generic-sql.query-processor
   "The Query Processor is responsible for translating the Metabase Query Language into HoneySQL SQL forms."
   (:require [clojure.java.jdbc :as jdbc]
+            [clojure.string :as str]
             [clojure.tools.logging :as log]
             [honeysql
              [core :as hsql]
@@ -17,11 +18,18 @@
             [metabase.util.honeysql-extensions :as hx])
   (:import clojure.lang.Keyword
            java.sql.SQLException
-           [metabase.query_processor.interface AgFieldRef DateTimeField DateTimeValue Expression ExpressionRef Field RelativeDateTimeValue Value]))
+           [metabase.query_processor.interface AgFieldRef BinnedField DateTimeField DateTimeValue Expression ExpressionRef Field FieldLiteral RelativeDateTimeValue Value]))
 
 (def ^:dynamic *query*
   "The outer query currently being processed."
   nil)
+
+(def ^:private ^:dynamic *nested-query-level*
+  "How many levels deep are we into nested queries? (0 = top level.)
+   We keep track of this so we know what level to find referenced aggregations
+  (otherwise something like [:aggregate-field 0] could be ambiguous in a nested query).
+  Each nested query increments this counter by 1."
+  0)
 
 (defn- driver [] {:pre [(map? *query*)]} (:driver *query*))
 
@@ -33,11 +41,18 @@
 
 ;;; ## Formatting
 
+(defn- qualified-alias
+  "Convert the given `FIELD` to a stringified alias"
+  [field]
+  (some->> field
+           (sql/field->alias (driver))
+           hx/qualify-and-escape-dots))
+
 (defn as
   "Generate a FORM `AS` FIELD alias using the name information of FIELD."
   [form field]
-  (if-let [alias (sql/field->alias (driver) field)]
-    [form (hx/qualify-and-escape-dots alias)]
+  (if-let [alias (qualified-alias field)]
+    [form alias]
     form))
 
 ;; TODO - Consider moving this into query processor interface and making it a method on `ExpressionRef` instead ?
@@ -46,6 +61,17 @@
   [expression-name]
   (or (get-in *query* [:query :expressions (keyword expression-name)]) (:expressions (:query *query*))
       (throw (Exception. (format "No expression named '%s'." (name expression-name))))))
+
+(defn- aggregation-at-index
+  "Fetch the aggregation at index. This is intended to power aggregate field references (e.g. [:aggregate-field 0]).
+   This also handles nested queries, which could be potentially ambiguous if multiple levels had aggregations."
+  ([index]
+   (aggregation-at-index index (:query *query*) *nested-query-level*))
+  ;; keep recursing deeper into the query until we get to the same level the aggregation reference was defined at
+  ([index query aggregation-level]
+   (if (zero? aggregation-level)
+     (nth (:aggregation query) index)
+     (recur index (:source-query query) (dec aggregation-level)))))
 
 ;; TODO - maybe this fn should be called `->honeysql` instead.
 (defprotocol ^:private IGenericSQLFormattable
@@ -77,14 +103,33 @@
         (isa? special-type :type/UNIXTimestampMilliseconds) (sql/unix-timestamp->timestamp (driver) field :milliseconds)
         :else                                               field)))
 
+  FieldLiteral
+  (formatted [{:keys [field-name]}]
+    (keyword (hx/escape-dots (name field-name))))
+
   DateTimeField
   (formatted [{unit :unit, field :field}]
     (sql/date (driver) unit (formatted field)))
 
+  BinnedField
+  (formatted [{:keys [bin-width min-value max-value field]}]
+    (let [formatted-field (formatted field)]
+      ;;
+      ;; Equation is | (value - min) |
+      ;;             | ------------- | * bin-width + min-value
+      ;;             |_  bin-width  _|
+      ;;
+      (-> formatted-field
+          (hx/- min-value)
+          (hx// bin-width)
+          hx/floor
+          (hx/* bin-width)
+          (hx/+ min-value))))
+
   ;; e.g. the ["aggregation" 0] fields we allow in order-by
   AgFieldRef
   (formatted [{index :index}]
-    (let [{:keys [aggregation-type]} (nth (:aggregation (:query *query*)) index)]
+    (let [{:keys [aggregation-type]} (aggregation-at-index index)]
       ;; For some arcane reason we name the results of a distinct aggregation "count",
       ;; everything else is named the same as the aggregation
       (if (= aggregation-type :distinct)
@@ -158,17 +203,14 @@
         form
         (recur form more)))))
 
-
 (defn apply-breakout
   "Apply a `breakout` clause to HONEYSQL-FORM. Default implementation of `apply-breakout` for SQL drivers."
-  [_ honeysql-form {breakout-fields :breakout, fields-fields :fields}]
-  (-> honeysql-form
-      ;; Group by all the breakout fields
-      ((partial apply h/group) (map formatted breakout-fields))
-      ;; Add fields form only for fields that weren't specified in :fields clause -- we don't want to include it twice, or HoneySQL will barf
-      ((partial apply h/merge-select) (for [field breakout-fields
-                                            :when (not (contains? (set fields-fields) field))]
-                                        (as (formatted field) field)))))
+  [_ honeysql-form {breakout-fields :breakout, fields-fields :fields :as query}]
+  (as-> honeysql-form new-hsql
+    (apply h/merge-select new-hsql (for [field breakout-fields
+                                         :when (not (contains? (set fields-fields) field))]
+                                     (as (formatted field) field)))
+    (apply h/group new-hsql (map formatted breakout-fields))))
 
 (defn apply-fields
   "Apply a `fields` clause to HONEYSQL-FORM. Default implementation of `apply-fields` for SQL drivers."
@@ -227,14 +269,15 @@
 
 (defn apply-order-by
   "Apply `order-by` clause to HONEYSQL-FORM. Default implementation of `apply-order-by` for SQL drivers."
-  [_ honeysql-form {subclauses :order-by}]
-  (loop [honeysql-form honeysql-form, [{:keys [field direction]} & more] subclauses]
-    (let [honeysql-form (h/merge-order-by honeysql-form [(formatted field) (case direction
-                                                                             :ascending  :asc
-                                                                             :descending :desc)])]
-      (if (seq more)
-        (recur honeysql-form more)
-        honeysql-form))))
+  [_ honeysql-form {subclauses :order-by breakout-fields :breakout}]
+  (let [[{:keys [special-type] :as first-breakout-field}] breakout-fields]
+    (loop [honeysql-form honeysql-form, [{:keys [field direction]} & more] subclauses]
+      (let [honeysql-form (h/merge-order-by honeysql-form [(formatted field) (case direction
+                                                                               :ascending  :asc
+                                                                               :descending :desc)])]
+        (if (seq more)
+          (recur honeysql-form more)
+          honeysql-form)))))
 
 (defn apply-page
   "Apply `page` clause to HONEYSQL-FORM. Default implementation of `apply-page` for SQL drivers."
@@ -247,12 +290,24 @@
   {:pre [table-name]}
   (h/from honeysql-form (hx/qualify-and-escape-dots schema table-name)))
 
+(declare apply-clauses)
+
+(defn- apply-source-query [driver honeysql-form {{:keys [native], :as source-query} :source-query}]
+  ;; TODO - what alias should we give the source query?
+  (assoc honeysql-form
+    :from [[(if native
+              (hsql/raw (str "(" (str/replace native #";+\s*$" "") ")")) ; strip off any trailing slashes
+              (binding [*nested-query-level* (inc *nested-query-level*)]
+                (apply-clauses driver {} source-query)))
+            :source]]))
+
 (def ^:private clause-handlers
   ;; 1) Use the vars rather than the functions themselves because them implementation
   ;;    will get swapped around and  we'll be left with old version of the function that nobody implements
   ;; 2) This is a vector rather than a map because the order the clauses get handled is important for some drivers.
   ;;    For example, Oracle needs to wrap the entire query in order to apply its version of limit (`WHERE ROWNUM`).
   [:source-table (u/drop-first-arg apply-source-table)
+   :source-query apply-source-query
    :aggregation  #'sql/apply-aggregation
    :breakout     #'sql/apply-breakout
    :fields       #'sql/apply-fields
@@ -271,7 +326,8 @@
                           honeysql-form)]
       (if (seq more)
         (recur honeysql-form more)
-        honeysql-form))))
+        ;; ok, we're done; if no `:select` clause was specified (for whatever reason) put a default (`SELECT *`) one in
+        (update honeysql-form :select #(if (seq %) % [:*]))))))
 
 
 (defn build-honeysql-form

@@ -21,7 +21,6 @@
              [field :as field]
              [table :as table]]
             [metabase.query-processor.util :as qputil]
-            [metabase.sync-database.analyze :as analyze]
             [metabase.util.honeysql-extensions :as hx]
             [toucan.db :as db])
   (:import com.google.api.client.googleapis.auth.oauth2.GoogleCredential
@@ -210,15 +209,15 @@
 (defn- date-add [unit timestamp interval]
   (hsql/call :date_add timestamp interval (hx/literal unit)))
 
-;; µs = unix timestamp in microseconds. Most BigQuery functions like strftime require timestamps in this format
+;; microseconds = unix timestamp in microseconds. Most BigQuery functions like strftime require timestamps in this format
 
-(def ^:private ->µs (partial hsql/call :timestamp_to_usec))
+(def ^:private ->microseconds (partial hsql/call :timestamp_to_usec))
 
-(defn- µs->str [format-str µs]
+(defn- microseconds->str [format-str µs]
   (hsql/call :strftime_utc_usec µs (hx/literal format-str)))
 
 (defn- trunc-with-format [format-str timestamp]
-  (hx/->timestamp (µs->str format-str (->µs timestamp))))
+  (hx/->timestamp (microseconds->str format-str (->microseconds timestamp))))
 
 (defn- date [unit expr]
   {:pre [expr]}
@@ -470,8 +469,7 @@
 
   driver/IDriver
   (merge driver/IDriverDefaultsMixin
-         {:analyze-table            analyze/generic-analyze-table
-          :can-connect?             (u/drop-first-arg can-connect?)
+         {:can-connect?             (u/drop-first-arg can-connect?)
           :date-interval            (u/drop-first-arg (comp prepare-value u/relative-date))
           :describe-database        (u/drop-first-arg describe-database)
           :describe-table           (u/drop-first-arg describe-table)
@@ -503,7 +501,8 @@
           :features                 (constantly (set/union #{:basic-aggregations
                                                              :standard-deviation-aggregations
                                                              :native-parameters
-                                                             :expression-aggregations}
+                                                             :expression-aggregations
+                                                             :binning}
                                                            (when-not config/is-test?
                                                              ;; during unit tests don't treat bigquery as having FK support
                                                              #{:foreign-keys})))
@@ -511,4 +510,7 @@
           :format-custom-field-name (u/drop-first-arg format-custom-field-name)
           :mbql->native             (u/drop-first-arg mbql->native)}))
 
-(driver/register-driver! :bigquery driver)
+(defn -init-driver
+  "Register the BigQuery driver"
+  []
+  (driver/register-driver! :bigquery driver))

@@ -1,6 +1,7 @@
 (ns metabase.driver.druid-test
   (:require [cheshire.core :as json]
             [expectations :refer [expect]]
+            [medley.core :as m]
             [metabase
              [driver :as driver]
              [query-processor :as qp]
@@ -8,7 +9,7 @@
              [timeseries-query-processor-test :as timeseries-qp-test]
              [util :as u]]
             [metabase.models.metric :refer [Metric]]
-            [metabase.query-processor.expand :as ql]
+            [metabase.query-processor.middleware.expand :as ql]
             [metabase.test.data :as data]
             [metabase.test.data.datasets :as datasets :refer [expect-with-engine]]
             [toucan.util.test :as tt]))
@@ -29,9 +30,13 @@
 (defn- process-native-query [query]
   (datasets/with-engine :druid
     (timeseries-qp-test/with-flattened-dbdef
-      (qp/process-query {:native   {:query query}
-                         :type     :native
-                         :database (data/id)}))))
+      (-> (qp/process-query {:native   {:query query}
+                             :type     :native
+                             :database (data/id)})
+          (m/dissoc-in [:data :results_metadata])))))
+
+(def ^:private col-defaults
+  {:base_type :type/Text, :remapped_from nil, :remapped_to nil})
 
 ;; test druid native queries
 (expect-with-engine :druid
@@ -40,12 +45,13 @@
    :data      {:columns     ["timestamp" "id" "user_name" "venue_price" "venue_name" "count"]
                :rows        [["2013-01-03T08:00:00.000Z" "931" "Simcha Yan" "1" "Kinaree Thai Bistro"       1]
                              ["2013-01-10T08:00:00.000Z" "285" "Kfir Caj"   "2" "Ruen Pair Thai Restaurant" 1]]
-               :cols        [{:name "timestamp",   :base_type :type/Text}
-                             {:name "id",          :base_type :type/Text}
-                             {:name "user_name",   :base_type :type/Text}
-                             {:name "venue_price", :base_type :type/Text}
-                             {:name "venue_name",  :base_type :type/Text}
-                             {:name "count",       :base_type :type/Integer}]
+               :cols        (mapv #(merge col-defaults %)
+                                  [{:name "timestamp",   :display_name "Timestamp"}
+                                   {:name "id",          :display_name "ID"}
+                                   {:name "user_name",   :display_name "User Name"}
+                                   {:name "venue_price", :display_name "Venue Price"}
+                                   {:name "venue_name",  :display_name "Venue Name"}
+                                   {:name "count",       :display_name "Count", :base_type :type/Integer}])
                :native_form {:query native-query-1}}}
   (process-native-query native-query-1))
 

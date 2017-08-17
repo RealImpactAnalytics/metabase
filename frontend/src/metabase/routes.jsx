@@ -41,6 +41,9 @@ import QueryBuilder from "metabase/query_builder/containers/QueryBuilder.jsx";
 import SetupApp from "metabase/setup/containers/SetupApp.jsx";
 import UserSettingsApp from "metabase/user/containers/UserSettingsApp.jsx";
 
+// new question
+import { NewQuestionStart } from "metabase/new_query/router_wrappers";
+
 // admin containers
 import DatabaseListApp from "metabase/admin/databases/containers/DatabaseListApp.jsx";
 import DatabaseEditApp from "metabase/admin/databases/containers/DatabaseEditApp.jsx";
@@ -50,16 +53,47 @@ import SegmentApp from "metabase/admin/datamodel/containers/SegmentApp.jsx";
 import RevisionHistoryApp from "metabase/admin/datamodel/containers/RevisionHistoryApp.jsx";
 import AdminPeopleApp from "metabase/admin/people/containers/AdminPeopleApp.jsx";
 import SettingsEditorApp from "metabase/admin/settings/containers/SettingsEditorApp.jsx";
+import FieldApp from "metabase/admin/datamodel/containers/FieldApp.jsx"
 
 import NotFound from "metabase/components/NotFound.jsx";
 import Unauthorized from "metabase/components/Unauthorized.jsx";
 
-import ReferenceApp from "metabase/reference/containers/ReferenceApp.jsx";
-import ReferenceEntity from "metabase/reference/containers/ReferenceEntity.jsx";
-import ReferenceEntityList from "metabase/reference/containers/ReferenceEntityList.jsx";
-import ReferenceFieldsList from "metabase/reference/containers/ReferenceFieldsList.jsx";
-import ReferenceRevisionsList from "metabase/reference/containers/ReferenceRevisionsList.jsx";
-import ReferenceGettingStartedGuide from "metabase/reference/containers/ReferenceGettingStartedGuide.jsx";
+// Reference Guide
+import GettingStartedGuideContainer from "metabase/reference/guide/GettingStartedGuideContainer.jsx";
+// Reference Metrics
+import MetricListContainer from "metabase/reference/metrics/MetricListContainer.jsx";
+import MetricDetailContainer from "metabase/reference/metrics/MetricDetailContainer.jsx";
+import MetricQuestionsContainer from "metabase/reference/metrics/MetricQuestionsContainer.jsx";
+import MetricRevisionsContainer from "metabase/reference/metrics/MetricRevisionsContainer.jsx";
+// Reference Segments
+import SegmentListContainer from "metabase/reference/segments/SegmentListContainer.jsx";
+import SegmentDetailContainer from "metabase/reference/segments/SegmentDetailContainer.jsx";
+import SegmentQuestionsContainer from "metabase/reference/segments/SegmentQuestionsContainer.jsx";
+import SegmentRevisionsContainer from "metabase/reference/segments/SegmentRevisionsContainer.jsx";
+import SegmentFieldListContainer from "metabase/reference/segments/SegmentFieldListContainer.jsx";
+import SegmentFieldDetailContainer from "metabase/reference/segments/SegmentFieldDetailContainer.jsx";
+// Reference Databases
+import DatabaseListContainer from "metabase/reference/databases/DatabaseListContainer.jsx";
+import DatabaseDetailContainer from "metabase/reference/databases/DatabaseDetailContainer.jsx";
+import TableListContainer from "metabase/reference/databases/TableListContainer.jsx";
+import TableDetailContainer from "metabase/reference/databases/TableDetailContainer.jsx";
+import TableQuestionsContainer from "metabase/reference/databases/TableQuestionsContainer.jsx";
+import FieldListContainer from "metabase/reference/databases/FieldListContainer.jsx";
+import FieldDetailContainer from "metabase/reference/databases/FieldDetailContainer.jsx";
+
+
+/* XRay */
+import FieldXRay from "metabase/xray/containers/FieldXray.jsx";
+import TableXRay from "metabase/xray/containers/TableXRay.jsx";
+import SegmentXRay from "metabase/xray/containers/SegmentXRay.jsx";
+import CardXRay from "metabase/xray/containers/CardXRay.jsx";
+
+/* Comparisons */
+import FieldComparison from "metabase/xray/containers/FieldComparison.jsx";
+import TableComparison from "metabase/xray/containers/TableComparison.jsx";
+import SegmentComparison from "metabase/xray/containers/SegmentComparison.jsx";
+import SegmentTableComparison from "metabase/xray/containers/SegmentTableComparison.jsx";
+import CardComparison from "metabase/xray/containers/CardComparison.jsx";
 
 import getAdminPermissionsRoutes from "metabase/admin/permissions/routes.jsx";
 
@@ -162,7 +196,15 @@ export const getRoutes = (store) =>
                 <Route path="/dashboard/:dashboardId" title="Dashboard" component={DashboardApp} />
 
                 {/* QUERY BUILDER */}
-                <Route path="/question" component={QueryBuilder} />
+                <Route path="/question">
+                    <IndexRoute component={QueryBuilder} />
+                    { /* NEW QUESTION FLOW */ }
+                    <Route path="new">
+                        <IndexRoute component={NewQuestionStart} />
+                        {/*<Route path="metrics" component={NewQuestionMetrics} />*/}
+                        {/*<Route path="segments" component={NewQuestionSegments} />*/}
+                    </Route>
+                </Route>
                 <Route path="/question/:cardId" component={QueryBuilder} />
 
                 {/* QUESTIONS */}
@@ -190,26 +232,38 @@ export const getRoutes = (store) =>
                 </Route>
 
                 {/* REFERENCE */}
-                <Route path="/reference" title="Data Reference" component={ReferenceApp}>
+                <Route path="/reference" title="Data Reference">
                     <IndexRedirect to="/reference/guide" />
-                    <Route path="guide" title="Getting Started" component={ReferenceGettingStartedGuide} />
-                    <Route path="metrics" component={ReferenceEntityList} />
-                    <Route path="metrics/:metricId" component={ReferenceEntity} />
-                    <Route path="metrics/:metricId/questions" component={ReferenceEntityList} />
-                    <Route path="metrics/:metricId/revisions" component={ReferenceRevisionsList} />
-                    <Route path="segments" component={ReferenceEntityList} />
-                    <Route path="segments/:segmentId" component={ReferenceEntity} />
-                    <Route path="segments/:segmentId/fields" component={ReferenceFieldsList} />
-                    <Route path="segments/:segmentId/fields/:fieldId" component={ReferenceEntity} />
-                    <Route path="segments/:segmentId/questions" component={ReferenceEntityList} />
-                    <Route path="segments/:segmentId/revisions" component={ReferenceRevisionsList} />
-                    <Route path="databases" component={ReferenceEntityList} />
-                    <Route path="databases/:databaseId" component={ReferenceEntity} />
-                    <Route path="databases/:databaseId/tables" component={ReferenceEntityList} />
-                    <Route path="databases/:databaseId/tables/:tableId" component={ReferenceEntity} />
-                    <Route path="databases/:databaseId/tables/:tableId/fields" component={ReferenceFieldsList} />
-                    <Route path="databases/:databaseId/tables/:tableId/fields/:fieldId" component={ReferenceEntity} />
-                    <Route path="databases/:databaseId/tables/:tableId/questions" component={ReferenceEntityList} />
+                    <Route path="guide" title="Getting Started" component={GettingStartedGuideContainer} />
+                    <Route path="metrics" component={MetricListContainer} />
+                    <Route path="metrics/:metricId" component={MetricDetailContainer} />
+                    <Route path="metrics/:metricId/questions" component={MetricQuestionsContainer} />
+                    <Route path="metrics/:metricId/revisions" component={MetricRevisionsContainer} />
+                    <Route path="segments" component={SegmentListContainer} />
+                    <Route path="segments/:segmentId" component={SegmentDetailContainer} />
+                    <Route path="segments/:segmentId/fields" component={SegmentFieldListContainer} />
+                    <Route path="segments/:segmentId/fields/:fieldId" component={SegmentFieldDetailContainer} />
+                    <Route path="segments/:segmentId/questions" component={SegmentQuestionsContainer} />
+                    <Route path="segments/:segmentId/revisions" component={SegmentRevisionsContainer} />
+                    <Route path="databases" component={DatabaseListContainer} />
+                    <Route path="databases/:databaseId" component={DatabaseDetailContainer} />
+                    <Route path="databases/:databaseId/tables" component={TableListContainer} />
+                    <Route path="databases/:databaseId/tables/:tableId" component={TableDetailContainer} />
+                    <Route path="databases/:databaseId/tables/:tableId/fields" component={FieldListContainer} />
+                    <Route path="databases/:databaseId/tables/:tableId/fields/:fieldId" component={FieldDetailContainer} />
+                    <Route path="databases/:databaseId/tables/:tableId/questions" component={TableQuestionsContainer} />
+                </Route>
+                {/* REFERENCE */}
+                <Route path="/xray" title="XRay">
+                    <Route path="segment/:segmentId/:cost" component={SegmentXRay} />
+                    <Route path="table/:tableId/:cost" component={TableXRay} />
+                    <Route path="field/:fieldId/:cost" component={FieldXRay} />
+                    <Route path="card/:cardId" component={CardXRay} />
+                    <Route path="compare/fields/:fieldId1/:fieldId2" component={FieldComparison} />
+                    <Route path="compare/tables/:tableId1/:tableId2" component={TableComparison} />
+                    <Route path="compare/segments/:segmentId1/:segmentId2/:cost" component={SegmentComparison} />
+                    <Route path="compare/segment/:segmentId/table/:tableId/:cost" component={SegmentTableComparison} />
+                    <Route path="compare/cards/:cardId1/:cardId2" component={CardComparison} />
                 </Route>
 
                 {/* PULSE */}
@@ -239,6 +293,7 @@ export const getRoutes = (store) =>
                     <Route path="database/:databaseId" component={MetadataEditorApp} />
                     <Route path="database/:databaseId/:mode" component={MetadataEditorApp} />
                     <Route path="database/:databaseId/:mode/:tableId" component={MetadataEditorApp} />
+                    <Route path="database/:databaseId/:mode/:tableId/:fieldId" component={FieldApp} />
                     <Route path="metric/create" component={MetricApp} />
                     <Route path="metric/:id" component={MetricApp} />
                     <Route path="segment/create" component={SegmentApp} />
@@ -259,6 +314,7 @@ export const getRoutes = (store) =>
                 <Route path="settings" title="Settings">
                     <IndexRedirect to="/admin/settings/setup" />
                     {/* <IndexRoute component={SettingsEditorApp} /> */}
+                    <Route path=":section/:authType" component={SettingsEditorApp} />
                     <Route path=":section" component={SettingsEditorApp} />
                 </Route>
 

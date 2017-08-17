@@ -5,7 +5,7 @@
             [metabase
              [driver :as driver]
              [query-processor-test :refer [rows]]
-             [sync-database :as sync-db]
+             [sync :as sync]
              [util :as u]]
             [metabase.driver
              [generic-sql :as sql]
@@ -14,7 +14,7 @@
              [database :refer [Database]]
              [field :refer [Field]]
              [table :refer [Table]]]
-            [metabase.query-processor.expand :as ql]
+            [metabase.query-processor.middleware.expand :as ql]
             [metabase.test
              [data :as data]
              [util :as tu]]
@@ -120,7 +120,7 @@
              [3 "ouija_board"]]}
   (-> (data/dataset metabase.driver.postgres-test/dots-in-names
         (data/run-query objects.stuff))
-      :data (dissoc :cols :native_form)))
+      :data (dissoc :cols :native_form :results_metadata)))
 
 
 ;; Make sure that duplicate column names (e.g. caused by using a FK) still return both columns
@@ -140,7 +140,7 @@
   (-> (data/dataset metabase.driver.postgres-test/duplicate-names
         (data/run-query people
           (ql/fields $name $bird_id->birds.name)))
-      :data (dissoc :cols :native_form)))
+      :data (dissoc :cols :native_form :results_metadata)))
 
 
 ;;; Check support for `inet` columns
@@ -221,7 +221,7 @@
     (drop-if-exists-and-create-db! "dropped_views_test")
     ;; create the DB object
     (tt/with-temp Database [database {:engine :postgres, :details (assoc details :dbname "dropped_views_test")}]
-      (let [sync! #(sync-db/sync-database! database, :full-sync? true)]
+      (let [sync! #(sync/sync-database! database)]
         ;; populate the DB and create a view
         (exec! ["CREATE table birds (name VARCHAR UNIQUE NOT NULL);"
                 "INSERT INTO birds (name) VALUES ('Rasta'), ('Lucky'), ('Kanye Nest');"

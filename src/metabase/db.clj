@@ -34,7 +34,7 @@
            ;; File-based DB
            (let [db-file-name (config/config-str :mb-db-file)
                  db-file      (io/file db-file-name)
-                 options      ";AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1"]
+                 options      ";DB_CLOSE_DELAY=-1"]
              (apply str "file:" (if (.isAbsolute db-file)
                                   ;; when an absolute path is given for the db file then don't mess with it
                                   [db-file-name options]
@@ -397,8 +397,8 @@
 (defn join
   "Convenience for generating a HoneySQL `JOIN` clause.
 
-     (db/select-ids Table
-       (mdb/join [Table :raw_table_id] [RawTable :id])
+     (db/select-ids FieldValues
+       (mdb/join [FieldValues :field_id] [Field :id])
        :active true)"
   [[source-entity fk] [dest-entity pk]]
   {:left-join [(db/resolve-model dest-entity) [:= (db/qualify source-entity fk)

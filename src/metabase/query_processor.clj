@@ -8,24 +8,30 @@
              [query :as query]
              [query-execution :as query-execution :refer [QueryExecution]]]
             [metabase.query-processor.middleware
+             [add-dimension-projections :as add-dim]
              [add-implicit-clauses :as implicit-clauses]
              [add-row-count-and-status :as row-count-and-status]
              [add-settings :as add-settings]
              [annotate-and-sort :as annotate-and-sort]
+             [binning :as binning]
              [cache :as cache]
              [catch-exceptions :as catch-exceptions]
              [cumulative-aggregations :as cumulative-ags]
              [dev :as dev]
              [driver-specific :as driver-specific]
+             [expand :as expand]
              [expand-macros :as expand-macros]
-             [expand-resolve :as expand-resolve]
+             [fetch-source-query :as fetch-source-query]
              [format-rows :as format-rows]
              [limit :as limit]
              [log :as log-query]
              [mbql-to-native :as mbql-to-native]
              [parameters :as parameters]
              [permissions :as perms]
-             [resolve-driver :as resolve-driver]]
+             [results-metadata :as results-metadata]
+             [resolve-driver :as resolve-driver]
+             [resolve :as resolve]
+             [source-table :as source-table]]
             [metabase.query-processor.util :as qputil]
             [metabase.util.schema :as su]
             [schema.core :as s]
@@ -83,17 +89,24 @@
       dev/check-results-format
       limit/limit
       cumulative-ags/handle-cumulative-aggregations
-      implicit-clauses/add-implicit-clauses
       format-rows/format-rows
-      expand-resolve/expand-resolve                    ; ▲▲▲ QUERY EXPANSION POINT  ▲▲▲ All functions *above* will see EXPANDED query during PRE-PROCESSING
+      binning/update-binning-strategy
+      results-metadata/record-and-return-metadata!
+      resolve/resolve-middleware
+      add-dim/add-remapping
+      implicit-clauses/add-implicit-clauses
+      source-table/resolve-source-table-middleware
+      expand/expand-middleware                         ; ▲▲▲ QUERY EXPANSION POINT  ▲▲▲ All functions *above* will see EXPANDED query during PRE-PROCESSING
       row-count-and-status/add-row-count-and-status    ; ▼▼▼ RESULTS WRAPPING POINT ▼▼▼ All functions *below* will see results WRAPPED in `:data` during POST-PROCESSING
       parameters/substitute-parameters
       expand-macros/expand-macros
       driver-specific/process-query-in-context         ; (drivers can inject custom middleware if they implement IDriver's `process-query-in-context`)
       add-settings/add-settings
       resolve-driver/resolve-driver                    ; ▲▲▲ DRIVER RESOLUTION POINT ▲▲▲ All functions *above* will have access to the driver during PRE- *and* POST-PROCESSING
+      fetch-source-query/fetch-source-query
       log-query/log-initial-query
       cache/maybe-return-cached-results
+      log-query/log-results-metadata
       catch-exceptions/catch-exceptions))
 ;; ▲▲▲ PRE-PROCESSING ▲▲▲ happens from BOTTOM-TO-TOP, e.g. the results of `expand-macros` are (eventually) passed to `expand-resolve`
 
@@ -101,8 +114,10 @@
   "Return the native form for QUERY (e.g. for a MBQL query on Postgres this would return a map containing the compiled SQL form)."
   {:style/indent 0}
   [query]
-  (-> ((qp-pipeline identity) query)
-      (get-in [:data :native_form])))
+  (let [results ((qp-pipeline identity) query)]
+    (or (get-in results [:data :native_form])
+        (throw (ex-info "No native form returned."
+                 results)))))
 
 (defn process-query
   "A pipeline of various QP functions (including middleware) that are used to process MB queries."
@@ -114,9 +129,12 @@
   "Expand a QUERY the same way it would normally be done as part of query processing.
    This is useful for things that need to look at an expanded query, such as permissions checking for Cards."
   (->> identity
-       expand-resolve/expand-resolve
+       resolve/resolve-middleware
+       source-table/resolve-source-table-middleware
+       expand/expand-middleware
        parameters/substitute-parameters
-       expand-macros/expand-macros))
+       expand-macros/expand-macros
+       fetch-source-query/fetch-source-query))
 ;; ▲▲▲ This only does PRE-PROCESSING, so it happens from bottom to top, eventually returning the preprocessed query instead of running it
 
 
@@ -230,7 +248,8 @@
                   (s/optional-key :executed-by)  (s/maybe su/IntGreaterThanZero)
                   (s/optional-key :card-id)      (s/maybe su/IntGreaterThanZero)
                   (s/optional-key :dashboard-id) (s/maybe su/IntGreaterThanZero)
-                  (s/optional-key :pulse-id)     (s/maybe su/IntGreaterThanZero)}
+                  (s/optional-key :pulse-id)     (s/maybe su/IntGreaterThanZero)
+                  (s/optional-key :nested?)      (s/maybe s/Bool)}
                  (fn [{:keys [executed-by]}]
                    (or (integer? executed-by)
                        *allow-queries-with-no-executor-id*))

@@ -88,9 +88,14 @@ export const SlackApi = {
     updateSettings:              PUT("/api/slack/settings"),
 };
 
+export const LdapApi = {
+    updateSettings:              PUT("/api/ldap/settings")
+};
+
 export const MetabaseApi = {
     db_list:                     GET("/api/database"),
-    db_list_with_tables:         GET("/api/database?include_tables=true"),
+    db_list_with_tables:         GET("/api/database?include_tables=true&include_cards=true"),
+    db_real_list_with_tables:    GET("/api/database?include_tables=true&include_cards=false"),
     db_create:                  POST("/api/database"),
     db_add_sample_dataset:      POST("/api/database/sample_dataset"),
     db_get:                      GET("/api/database/:dbId"),
@@ -116,16 +121,45 @@ export const MetabaseApi = {
                                         table.metrics.push(...GA.metrics);
                                         table.segments.push(...GA.segments);
                                     }
+
+                                    if (table && table.fields) {
+                                        // replace dimension_options IDs with objects
+                                        for (const field of table.fields) {
+                                            if (field.dimension_options) {
+                                                field.dimension_options = field.dimension_options.map(id => table.dimension_options[id])
+                                            }
+                                            if (field.default_dimension_option) {
+                                                field.default_dimension_option = table.dimension_options[field.default_dimension_option];
+                                            }
+                                        }
+                                    }
+
                                     return table;
                                  }),
     // table_sync_metadata:        POST("/api/table/:tableId/sync"),
     // field_get:                   GET("/api/field/:fieldId"),
     // field_summary:               GET("/api/field/:fieldId/summary"),
     field_values:                GET("/api/field/:fieldId/values"),
-    // field_value_map_update:     POST("/api/field/:fieldId/value_map_update"),
+    field_values_update:        POST("/api/field/:fieldId/values"),
     field_update:                PUT("/api/field/:id"),
+    field_dimension_update:     POST("/api/field/:fieldId/dimension"),
+    field_dimension_delete:   DELETE("/api/field/:fieldId/dimension"),
     dataset:                    POST("/api/dataset"),
-    dataset_duration:           POST("/api/dataset/duration"),
+    dataset_duration:           POST("/api/dataset/duration")
+};
+
+export const XRayApi = {
+    // X-Rays
+    field_xray:            GET("api/x-ray/field/:fieldId"),
+    table_xray:            GET("api/x-ray/table/:tableId"),
+    segment_xray:          GET("api/x-ray/segment/:segmentId"),
+    card_xray:             GET("api/x-ray/card/:cardId"),
+
+    field_compare:         GET("api/x-ray/compare/fields/:fieldId1/:fieldId2"),
+    table_compare:         GET("api/x-ray/compare/tables/:tableId1/:tableId2"),
+    segment_compare:       GET("api/x-ray/compare/segments/:segmentId1/:segmentId2"),
+    segment_table_compare: GET("api/x-ray/compare/segment/:segmentId/table/:tableId"),
+    card_compare:          GET("api/x-ray/compare/cards/:cardId1/:cardId2")
 };
 
 export const PulseApi = {
