@@ -24,7 +24,7 @@
       (f updated-field-names)
       @updated-field-names)))
 
-(def ^:private basic-native-query
+(defn- basic-native-query []
   {:database (data/id)
    :type     "native"
    :native   {:query "SELECT AVG(SUBTOTAL) AS \"Average Price\"\nFROM ORDERS"}})
@@ -99,7 +99,7 @@
   #{"New Field"}
   ;; create a Card with non-parameterized query
   (do-with-updated-fields-for-card {:db    {:is_on_demand true}
-                                    :card  {:dataset_query basic-native-query}
+                                    :card  {:dataset_query (basic-native-query)}
                                     :field {:name "New Field"}}
     (fn [{:keys [table field card]}]
       ;; now change the query to one that references our Field in a on-demand DB. Field should have updated values
@@ -120,7 +120,7 @@
   #{}
   ;; create a Card with non-parameterized query
   (do-with-updated-fields-for-card {:db   {:is_on_demand false}
-                                    :card {:dataset_query basic-native-query}}
+                                    :card {:dataset_query (basic-native-query)}}
     (fn [{:keys [field card]}]
       ;; now change the query to one that references a Field. Field should not get values since DB is not On-Demand
       (db/update! Card (u/get-id card)
@@ -142,7 +142,7 @@
 ;;; |                                                   DASHBOARDS                                                   |
 ;;; +----------------------------------------------------------------------------------------------------------------+
 
-(def ^:private basic-mbql-query
+(defn- basic-mbql-query []
   {:database (data/id)
    :type     :query
    :query    {:source_table (data/id :venues)
@@ -157,7 +157,7 @@
     {:parameter_mappings (parameter-mappings-for-card-and-field card-or-id field-or-id)}))
 
 (defn- do-with-updated-fields-for-dashboard {:style/indent 1} [options & [f]]
-  (do-with-updated-fields-for-card (merge {:card {:dataset_query basic-mbql-query}}
+  (do-with-updated-fields-for-card (merge {:card {:dataset_query (basic-mbql-query)}}
                                           options)
     (fn [objects]
       (tt/with-temp Dashboard [dash]

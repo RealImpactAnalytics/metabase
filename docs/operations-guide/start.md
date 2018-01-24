@@ -12,6 +12,8 @@
 *  [Changing password complexity](#changing-metabase-password-complexity)
 *  [Handling Timezones](#handling-timezones-in-metabase)
 *  [Configuring Emoji Logging](#configuring-emoji-logging)
+*  [How to setup monitoring via JMX](#monitoring-via-jmx)
+*  [A word on Java versions](#java-versions)
 
 # Installing and Running Metabase
 
@@ -26,9 +28,6 @@ Metabase provides a binary Mac OS X application for users who are interested in 
 #### [Running on Docker](running-metabase-on-docker.md)
 If you are using Docker containers and prefer to manage your Metabase installation that way then we've got you covered.  This guide discusses how to use the Metabase Docker image to launch a container running Metabase.
 
-
-
-
 ### Cloud Platforms
 
 #### [Running on AWS Elastic Beanstalk](running-metabase-on-elastic-beanstalk.md)
@@ -39,6 +38,12 @@ Currently in beta.  We've run Metabase on Heroku and it works just fine, but it'
 
 #### [Running on Cloud66](running-metabase-on-cloud66.md)
 Community support only at this time, but we have reports of Metabase instances running on Cloud66!
+
+#### [Running on Debian as a service](running-metabase-on-debian.md)
+Community support only at this time, but learn how to deploy Metabase as a service on Debian (and Debian-based) systems. Simple, guided, step-by-step approach that will work on any VPS.
+
+#### [Running on Kubernetes](running-metabase-on-kubernetes.md)
+Community Helm chart for running Metabase on Kubernetes
 
 # Upgrading Metabase
 
@@ -53,7 +58,7 @@ How you upgrade Metabase depends on how you are running it. See below for inform
 If you are running Metabase via docker, then you simply need to kill the Docker process and start a new container with the latest Metabase image. On startup, Metabase will perform any upgrade tasks it needs to perform, and once it's finished you'll be running the new version.
 
 #### Jar file
-If you are running the JVM Jar file directly, then you simply kill the process and restart the server. On startup, Metabase will perform any upgrade tasks it needs to perform, and once it's finished you'll be running the new version.
+If you are running the JVM Jar file directly, then you simply kill the process, replace the .jar file with the newer version and restart the server. On startup, Metabase will perform any upgrade tasks it needs to perform, and once it's finished you'll be running the new version.
 
 
 #### macOS Application
@@ -319,3 +324,31 @@ Metabase to use your own logging configuration file by passing a `-Dlog4j.config
     java -Dlog4j.configuration=file:/path/to/custom/log4j.properties -jar metabase.jar
 
 The easiest way to get started customizing logging would be to use a copy of default `log4j.properties` file linked to above and adjust that to meet your needs. Keep in mind that you'll need to restart Metabase for changes to the file to take effect.
+
+# [Monitoring via JMX](enable-jmx.md)
+
+Diagnosing performance related issues can be a challenge. Luckily the JVM ships with tools that can help diagnose many common issues. Enabling JMX and using a tool like VisualVM can help diagnose issues related to running out of memory, a hung Metabase instance and slow response times. See [Monitoring via JMX](enable-jmx.md) for more information on setting this up.
+
+# Java Versions
+
+Metabase will run on Java version 7 or greater, but Java 8 is the easiest and most common chioce. Java 7 was End of Life'd by Oracle in April of 2015 and as such, *Metabase support for Java 7 has been deprecated*. Users are encouraged to upgrade to Java 8 as we will drop support for Java 7 in a future release. For more information on installing/upgrading a Windows or macOS system, see the [Oracle installation instructions](https://docs.oracle.com/javase/8/docs/technotes/guides/install/install_overview.html). Linux users likely find OpenJDK easier to install/upgrade, more information is available on [the OpenJDK install page](http://openjdk.java.net/install/).
+
+## Running on Java 7
+
+Running Metabase on Java version 7 requires additional arguments to the Java invocation:
+
+    java -XX:+CMSClassUnloadingEnabled -XX:+UseConcMarkSweepGC -XX:MaxPermSize=256m -jar metabase.jar
+
+Note that these extra arguments are not required on Java 8. *Support for Java 7 has been deprecated and users are encouraged to upgrade*.
+
+## Running on Java 8
+
+Running on Java 8 is the easiest path to running Metabase. There are no additional parameters required, if launching from a Jar the below invocation will work:
+
+    java -jar metabase.jar
+
+## Running on Java 9
+
+Java version 9 has introduced a new module system that places some additional restrictions on class loading. Metabase (and it's dependencies) still rely on the old behavior. Metabase runs on Java 9, but requires an additional argument to work around these changes in the module system:
+
+    java --add-opens=java.base/java.net=ALL-UNNAMED -jar metabase.jar

@@ -1,10 +1,11 @@
 (ns metabase.models.card
+  "Underlying DB model for what is now most commonly referred to as a 'Question' in most user-facing situations. Card
+  is a historical name, but is the same thing; both terms are used interchangeably in the backend codebase."
   (:require [clojure.core.memoize :as memoize]
             [clojure.set :as set]
             [clojure.tools.logging :as log]
             [metabase
              [public-settings :as public-settings]
-             [query :as q]
              [query-processor :as qp]
              [util :as u]]
             [metabase.api.common :as api :refer [*current-user-id*]]
@@ -20,6 +21,7 @@
              [revision :as revision]]
             [metabase.query-processor.middleware.permissions :as qp-perms]
             [metabase.query-processor.util :as qputil]
+            [metabase.util.query :as q]
             [toucan
              [db :as db]
              [models :as models]]))
@@ -42,6 +44,27 @@
   (if-let [label-ids (seq (db/select-field :label_id CardLabel, :card_id id))]
     (db/select Label, :id [:in label-ids], {:order-by [:%lower.name]})
     []))
+
+(defn with-in-public-dashboard
+  "Efficiently add a `:in_public_dashboard` key to each item in a sequence of `cards`. This boolean key predictably
+  represents whether the Card in question is a member of one or more public Dashboards, which can be important in
+  determining its permissions. This will always be `false` if public sharing is disabled."
+  {:batched-hydrate :in_public_dashboard}
+  [cards]
+  (let [card-ids                  (set (filter some? (map :id cards)))
+        public-dashboard-card-ids (when (and (seq card-ids)
+                                             (public-settings/enable-public-sharing))
+                                    (->> (db/query {:select    [[:c.id :id]]
+                                                    :from      [[:report_card :c]]
+                                                    :left-join [[:report_dashboardcard :dc] [:= :c.id :dc.card_id]
+                                                                [:report_dashboard :d] [:= :dc.dashboard_id :d.id]]
+                                                    :where     [:and
+                                                                [:in :c.id card-ids]
+                                                                [:not= :d.public_uuid nil]]})
+                                         (map :id)
+                                         set))]
+    (for [card cards]
+      (assoc card :in_public_dashboard (contains? public-dashboard-card-ids (u/get-id card))))))
 
 
 ;;; ---------------------------------------------- Permissions Checking ----------------------------------------------
@@ -107,14 +130,23 @@
    READ-OR-WRITE is `:write`)."
   (memoize/ttl query-perms-set* :ttl/threshold (* 6 60 60 1000))) ; memoize for 6 hours
 
-
 (defn- perms-objects-set
   "Return a set of required permissions object paths for CARD.
    Optionally specify whether you want `:read` or `:write` permissions; default is `:read`.
    (`:write` permissions only affects native queries)."
-  [{query :dataset_query, collection-id :collection_id} read-or-write]
-  (if collection-id
+  [{query :dataset_query, collection-id :collection_id, public-uuid :public_uuid, in-public-dash? :in_public_dashboard}
+   read-or-write]
+  (cond
+    ;; you don't need any permissions to READ a public card, which is PUBLIC by definition :D
+    (and (public-settings/enable-public-sharing)
+         (= :read read-or-write)
+         (or public-uuid in-public-dash?))
+    #{}
+
+    collection-id
     (collection/perms-objects-set collection-id read-or-write)
+
+    :else
     (query-perms-set query read-or-write)))
 
 
@@ -141,31 +173,35 @@
 
 ;;; -------------------------------------------------- Lifecycle --------------------------------------------------
 
+(defn- native-query? [query-type]
+  (or (= query-type "native")
+      (= query-type :native)))
 
-
-(defn- query->database-and-table-ids
+(defn query->database-and-table-ids
   "Return a map with `:database-id` and source `:table-id` that should be saved for a Card. Handles queries that use
    other queries as their source (ones that come in with a `:source-table` like `card__100`) recursively, as well as
    normal queries."
   [outer-query]
   (let [database-id  (qputil/get-normalized outer-query :database)
+        query-type   (qputil/get-normalized outer-query :type)
         source-table (qputil/get-in-normalized outer-query [:query :source-table])]
     (cond
-      (integer? source-table) {:database-id database-id, :table-id source-table}
-      (string? source-table)  (let [[_ card-id] (re-find #"^card__(\d+)$" source-table)]
-                                (db/select-one [Card [:table_id :table-id] [:database_id :database-id]]
-                                  :id (Integer/parseInt card-id))))))
+      (native-query? query-type) {:database-id database-id, :table-id nil}
+      (integer? source-table)    {:database-id database-id, :table-id source-table}
+      (string? source-table)     (let [[_ card-id] (re-find #"^card__(\d+)$" source-table)]
+                                   (db/select-one [Card [:table_id :table-id] [:database_id :database-id]]
+                                     :id (Integer/parseInt card-id))))))
 
 (defn- populate-query-fields [{{query-type :type, :as outer-query} :dataset_query, :as card}]
-  (merge (when query-type
-           (let [{:keys [database-id table-id]} (query->database-and-table-ids outer-query)]
-             {:database_id database-id
-              :table_id    table-id
-              :query_type  (keyword query-type)}))
+  (merge (when-let [{:keys [database-id table-id]} (and query-type
+                                                        (query->database-and-table-ids outer-query))]
+           {:database_id database-id
+            :table_id    table-id
+            :query_type  (keyword query-type)})
          card))
 
 (defn- pre-insert [{:keys [dataset_query], :as card}]
-  ;; TODO - make sure if `collection_id` is specified that we have write permissions for tha tcollection
+  ;; TODO - make sure if `collection_id` is specified that we have write permissions for that collection
   (u/prog1 card
     ;; for native queries we need to make sure the user saving the card has native query permissions for the DB
     ;; because users can always see native Cards and we don't want someone getting around their lack of permissions

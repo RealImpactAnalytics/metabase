@@ -2,7 +2,7 @@ import React, { Component } from "react";
 import PropTypes from "prop-types";
 import ReactDOM from "react-dom";
 import S from "./ExpressionEditorTextfield.css";
-
+import { t } from 'c-3po';
 import _ from "underscore";
 import cx from "classnames";
 
@@ -171,7 +171,7 @@ export default class ExpressionEditorTextfield extends Component {
         } else if (this.state.expressionErrorMessage) {
             this.props.onError(this.state.expressionErrorMessage);
         } else {
-            this.props.onError({ message: "Invalid expression" });
+            this.props.onError({ message: t`Invalid expression` });
         }
     }
 
@@ -233,16 +233,22 @@ export default class ExpressionEditorTextfield extends Component {
             expressionErrorMessage,
             expressionString,
             parsedExpression,
-            suggestions
+            suggestions,
+            showAll: false
         });
+    }
+
+    onShowMoreMouseDown (e) {
+        e.preventDefault()
+        this.setState({ showAll: true })
     }
 
     render() {
         let errorMessage = this.state.expressionErrorMessage;
-        if (errorMessage && !errorMessage.length) errorMessage = 'unknown error';
+        if (errorMessage && !errorMessage.length) errorMessage = t`unknown error`;
 
         const { placeholder } = this.props;
-        const { suggestions } = this.state;
+        const { suggestions, showAll } = this.state;
 
         return (
             <div className={cx(S.editor, "relative")}>
@@ -271,7 +277,7 @@ export default class ExpressionEditorTextfield extends Component {
                         }}
                     >
                         <ul style={{minWidth: 150, overflow: "hidden"}}>
-                            {suggestions.slice(0,MAX_SUGGESTIONS).map((suggestion, i) =>
+                            {(showAll ? suggestions : suggestions.slice(0,MAX_SUGGESTIONS)).map((suggestion, i) =>
                                 // insert section title. assumes they're sorted by type
                                 [(i === 0 || suggestion.type !== suggestions[i - 1].type) &&
                                     <li  ref={"header-" + i} className="mx2 h6 text-uppercase text-bold text-grey-3 py1 pt2">
@@ -293,8 +299,8 @@ export default class ExpressionEditorTextfield extends Component {
                                     </li>
                                 ]
                             )}
-                            { suggestions.length >= MAX_SUGGESTIONS &&
-                                <li style={{ paddingTop: 5, paddingBottom: 5 }} className="px2 text-italic text-grey-3">and {suggestions.length - MAX_SUGGESTIONS} more</li>
+                            { !showAll && suggestions.length >= MAX_SUGGESTIONS &&
+                                <li style={{ paddingTop: 5, paddingBottom: 5 }} onMouseDownCapture={(e) => this.onShowMoreMouseDown(e)} className="px2 text-italic text-grey-3 cursor-pointer text-brand-hover">and {suggestions.length - MAX_SUGGESTIONS} more</li>
                             }
                         </ul>
                     </Popover>

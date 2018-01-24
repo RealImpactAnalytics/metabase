@@ -6,8 +6,11 @@ import type {
     ClickAction,
     ClickActionProps
 } from "metabase/meta/types/Visualization";
+import { t } from "c-3po";
 
-export default ({ question, clicked }: ClickActionProps): ClickAction[] => {
+export default (
+    { question, clicked, settings }: ClickActionProps
+): ClickAction[] => {
     const dimensions = (clicked && clicked.dimensions) || [];
     const drilldown = drillDownForDimensions(dimensions, question.metadata());
     if (!drilldown) {
@@ -18,7 +21,7 @@ export default ({ question, clicked }: ClickActionProps): ClickAction[] => {
         {
             name: "timeseries-zoom",
             section: "zoom",
-            title: "Zoom in",
+            title: t`Zoom in`,
             question: () => question.pivot(drilldown.breakouts, dimensions)
         }
     ];

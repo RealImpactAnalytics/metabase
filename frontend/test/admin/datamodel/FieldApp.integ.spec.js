@@ -1,5 +1,5 @@
 import {
-    login,
+    useSharedAdminLogin,
     createTestStore,
 } from "__support__/integrated_tests";
 
@@ -70,7 +70,7 @@ const initFieldApp = async ({ tableId = 1, fieldId }) => {
 
 describe("FieldApp", () => {
     beforeAll(async () => {
-        await login()
+        useSharedAdminLogin()
     })
 
     describe("name settings", () => {
@@ -264,7 +264,7 @@ describe("FieldApp", () => {
             click(fkFieldSelect);
 
             const sourceField = fkFieldSelect.parent().find(TestPopover)
-                .find("li")
+                .find(".List-item")
                 .filterWhere(li => /Source/.test(li.text()))
                 .first().children().first();
 
@@ -331,7 +331,7 @@ describe("FieldApp", () => {
             expect(section.find(RemappingNamingTip).length).toBe(1)
 
             dispatchBrowserEvent('mousedown', { e: { target: document.documentElement }})
-            await delay(10); // delay needed because of setState in FieldApp
+            await delay(300); // delay needed because of setState in FieldApp; app.update() does not work for whatever reason
             expect(section.find(".text-danger").length).toBe(1) // warning that you should choose a column
         })
 
@@ -385,7 +385,7 @@ describe("FieldApp", () => {
 
             store.waitForActions([UPDATE_FIELD_VALUES]);
         });
-        
+
         it("shows the updated values after page reload", async () => {
             const { fieldApp } = await initFieldApp({ tableId: PRODUCT_RATING_TABLE_ID, fieldId: PRODUCT_RATING_ID });
             const section = fieldApp.find(FieldRemapping)

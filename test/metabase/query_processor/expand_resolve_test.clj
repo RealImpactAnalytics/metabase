@@ -1,15 +1,18 @@
 (ns metabase.query-processor.expand-resolve-test
   "Tests query expansion/resolution"
-  (:require [expectations :refer :all]
+  (:require [clojure.string :as str]
+            [expectations :refer :all]
+            [metabase
+             [query-processor :as qp]
+             [util :as u]]
             [metabase.query-processor.middleware
              [expand :as ql]
              [resolve :as resolve]
              [source-table :as source-table]]
             [metabase.test
-             [data :refer :all]
+             [data :as data :refer :all]
              [util :as tu]]
-            [metabase.test.data.dataset-definitions :as defs]
-            [metabase.util :as u]))
+            [metabase.test.data.dataset-definitions :as defs]))
 
 ;; this is here because expectations has issues comparing and object w/ a map and most of the output
 ;; below has objects for the various place holders in the expanded/resolved query
@@ -85,6 +88,7 @@
                                                   {:field-id           true
                                                    :field-name         "PRICE"
                                                    :field-display-name "Price"
+                                                   :database-type      "INTEGER"
                                                    :base-type          :type/Integer
                                                    :special-type       :type/Category
                                                    :table-id           (id :venues)
@@ -98,6 +102,7 @@
                                                           {:field-id           true
                                                            :field-name         "PRICE"
                                                            :field-display-name "Price"
+                                                           :database-type      "INTEGER"
                                                            :base-type          :type/Integer
                                                            :special-type       :type/Category
                                                            :table-id           (id :venues)
@@ -151,6 +156,7 @@
                                                        :fk-field-id        (id :venues :category_id)
                                                        :field-name         "NAME"
                                                        :field-display-name "Name"
+                                                       :database-type      "VARCHAR"
                                                        :base-type          :type/Text
                                                        :special-type       :type/Name
                                                        :table-id           (id :categories)
@@ -167,6 +173,7 @@
                                                                :fk-field-id        (id :venues :category_id)
                                                                :field-name         "NAME"
                                                                :field-display-name "Name"
+                                                               :database-type      "VARCHAR"
                                                                :base-type          :type/Text
                                                                :special-type       :type/Name
                                                                :table-id           (id :categories)
@@ -223,6 +230,7 @@
                                                                :fk-field-id        (id :checkins :user_id)
                                                                :field-name         "LAST_LOGIN"
                                                                :field-display-name "Last Login"
+                                                               :database-type      "TIMESTAMP"
                                                                :base-type          :type/DateTime
                                                                :special-type       nil
                                                                :table-id           (id :users)
@@ -236,6 +244,7 @@
                                                                 :fk-field-id        (id :checkins :user_id)
                                                                 :field-name         "LAST_LOGIN"
                                                                 :field-display-name "Last Login"
+                                                                :database-type      "TIMESTAMP"
                                                                 :base-type          :type/DateTime
                                                                 :special-type       nil
                                                                 :visibility-type    :normal
@@ -283,7 +292,8 @@
                    :aggregation  [{:aggregation-type :sum
                                    :custom-name      nil
                                    :field            (merge field-defaults
-                                                            {:base-type          :type/Integer
+                                                            {:database-type      "INTEGER"
+                                                             :base-type          :type/Integer
                                                              :table-id           (id :venues)
                                                              :special-type       :type/Category
                                                              :field-name         "PRICE"
@@ -295,7 +305,8 @@
                                                              :fingerprint        {:global {:distinct-count 4}
                                                                                   :type   {:type/Number {:min 1, :max 4, :avg 2.03}}}})}]
                    :breakout     [{:field (merge field-defaults
-                                                 {:base-type          :type/Date
+                                                 {:database-type      "DATE"
+                                                  :base-type          :type/Date
                                                   :table-id           (id :checkins)
                                                   :special-type       nil
                                                   :field-name         "DATE"
@@ -321,3 +332,16 @@
     (tu/boolean-ids-and-timestamps
      (mapv obj->map [expanded-form
                      (resolve' expanded-form)]))))
+
+;; check that a schema invalidation error produces a reasonably-sized exception, < 50 lines.
+;; previously the entire schema was being dumped which resulted in a ~5200 line exception (#5978)
+(expect
+  (-> (qp/process-query
+        {:database (data/id)
+         :type     :query
+         :query    {:source-table (data/id :venues)
+                    :filter       [:and nil]}})
+      u/pprint-to-str
+      str/split-lines
+      count
+      (< 50)))

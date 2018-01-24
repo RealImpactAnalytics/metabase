@@ -1,10 +1,19 @@
 import React, { Component } from 'react'
 import cxs from 'cxs'
 import { connect } from 'react-redux'
-
+import { t } from 'c-3po';
 import { saturated } from 'metabase/lib/colors'
 
-import { fetchCardXray } from 'metabase/xray/xray'
+import { fetchCardXray, initialize } from 'metabase/xray/xray'
+import {
+    getLoadingStatus,
+    getError,
+    getXray,
+    getIsAlreadyFetched
+} from 'metabase/xray/selectors'
+
+import { xrayLoadingMessages } from 'metabase/xray/utils'
+
 import Icon from 'metabase/components/Icon'
 import Tooltip from 'metabase/components/Tooltip'
 import LoadingAndErrorWrapper from 'metabase/components/LoadingAndErrorWrapper'
@@ -12,9 +21,26 @@ import Visualization from 'metabase/visualizations/components/Visualization'
 
 import { XRayPageWrapper, Heading } from 'metabase/xray/components/XRayLayout'
 import Periodicity from 'metabase/xray/components/Periodicity'
+import LoadingAnimation from 'metabase/xray/components/LoadingAnimation'
+import { Insights } from "metabase/xray/components/Insights";
+
+const mapStateToProps = state => ({
+    xray: getXray(state),
+    isLoading: getLoadingStatus(state),
+    isAlreadyFetched: getIsAlreadyFetched(state),
+    error: getError(state)
+})
+
+const mapDispatchToProps = {
+    initialize,
+    fetchCardXray
+}
 
 type Props = {
+    initialize: () => void,
+    initialize: () => {},
     fetchCardXray: () => void,
+    isLoading: boolean,
     xray: {}
 }
 
@@ -42,21 +68,41 @@ const GrowthRateDisplay = ({ period }) =>
 class CardXRay extends Component {
     props: Props
 
-    componentDidMount () {
+    componentWillMount () {
         const { cardId, cost } = this.props.params
+        this.props.initialize()
         this.props.fetchCardXray(cardId, cost)
     }
 
+    componentWillUnmount() {
+        // HACK Atte Keinänen 9/20/17: We need this for now because the structure of `state.xray.xray` isn't same
+        // for all xray types and if switching to different kind of xray (= rendering different React container)
+        // without resetting the state fails because `state.xray.xray` subproperty lookups fail
+        this.props.initialize();
+    }
 
     render () {
-        const { xray } = this.props
+        const { xray, isLoading, isAlreadyFetched, error } = this.props
+
         return (
-            <LoadingAndErrorWrapper loading={!xray}>
+            <LoadingAndErrorWrapper
+                loading={isLoading || !isAlreadyFetched}
+                error={error}
+                noBackground
+                loadingMessages={xrayLoadingMessages}
+                loadingScenes={[<LoadingAnimation />]}
+            >
                 { () =>
                     <XRayPageWrapper>
-                        <div className="my2">
-                            <h1 className="my3">{xray.features.card.name} XRay</h1>
+                        <div className="mt4 mb2">
+                            <h1 className="my3">{xray.features.model.name} X-ray</h1>
                         </div>
+                        { xray.features["insights"] &&
+                            <div className="mt4">
+                                <Heading heading="Takeaways" />
+                                <Insights features={xray.features} />
+                            </div>
+                        }
                         <Heading heading="Growth rate" />
                         <div className="bg-white bordered rounded shadowed">
                             <div className="Grid Grid--1of4 border-bottom">
@@ -78,13 +124,13 @@ class CardXRay extends Component {
                                     <Visualization
                                         series={[
                                             {
-                                                card: xray.features.card,
-                                                data: xray.dataset
+                                                card: xray.features.model,
+                                                data: xray.features.series
                                             },
                                             {
                                                 card: {
                                                     display: 'line',
-                                                    name: 'Growth Trend',
+                                                    name: t`Growth Trend`,
                                                     visualization_settings: {
 
                                                     }
@@ -106,7 +152,7 @@ class CardXRay extends Component {
                                         {
                                             card: {
                                                 display: 'line',
-                                                name: 'Trend',
+                                                name: t`Trend`,
                                                 visualization_settings: {
 
                                                 }
@@ -125,7 +171,9 @@ class CardXRay extends Component {
                             </div>
                         </div>
 
-                        <Periodicity xray={Object.values(xray.constituents)[0]} />
+                        { xray.constituents[0] && (
+                            <Periodicity xray={Object.values(xray.constituents)[0]} />
+                        )}
 
                         <Heading heading={xray.features['seasonal-decomposition'].label} />
                         <div className="full">
@@ -135,7 +183,7 @@ class CardXRay extends Component {
                                         {
                                             card: {
                                                 display: 'line',
-                                                name: 'Trend',
+                                                name: t`Trend`,
                                                 visualization_settings: {}
                                             },
                                             data: xray.features['seasonal-decomposition'].value.trend
@@ -143,7 +191,7 @@ class CardXRay extends Component {
                                         {
                                             card: {
                                                 display: 'line',
-                                                name: 'Seasonal',
+                                                name: t`Seasonal`,
                                                 visualization_settings: {}
                                             },
                                             data: xray.features['seasonal-decomposition'].value.seasonal
@@ -151,7 +199,7 @@ class CardXRay extends Component {
                                         {
                                             card: {
                                                 display: 'line',
-                                                name: 'Residual',
+                                                name: t`Residual`,
                                                 visualization_settings: {}
                                             },
                                             data: xray.features['seasonal-decomposition'].value.residual
@@ -166,14 +214,6 @@ class CardXRay extends Component {
             </LoadingAndErrorWrapper>
         )
     }
-}
-
-const mapStateToProps = state => ({
-    xray: state.xray.cardXray,
-})
-
-const mapDispatchToProps = {
-    fetchCardXray
 }
 
 export default connect(mapStateToProps, mapDispatchToProps)(CardXRay)

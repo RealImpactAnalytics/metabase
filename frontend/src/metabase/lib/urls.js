@@ -11,8 +11,13 @@ export function question(cardId, hash = "", query = "") {
     }
     if (query && typeof query === "object") {
         query = Object.entries(query)
-            .map(kv => kv.map(encodeURIComponent).join("="))
-            .join("&");
+            .map(kv => {
+                if (Array.isArray(kv[1])) {
+                    return kv[1].map(v => `${encodeURIComponent(kv[0])}=${encodeURIComponent(v)}`).join('&');
+                } else {
+                    return kv.map(encodeURIComponent).join("=");
+                }
+            }).join("&");
     }
     if (hash && hash.charAt(0) !== "#") {
         hash = "#" + hash;
@@ -68,7 +73,7 @@ export function tableRowsQuery(databaseId, tableId, metricId, segmentId) {
 }
 
 export function collection(collection) {
-    return `/questions/collections/${encodeURIComponent(collection.slug)}`;
+    return `/questions/collections/${collection.slug}`;
 }
 
 export function label(label) {

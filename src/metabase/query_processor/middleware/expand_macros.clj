@@ -54,8 +54,14 @@
       (segment-parse-filter-subclause form))))
 
 (defn- expand-segments [query-dict]
-  (if (non-empty-clause? (get-in query-dict [:query :filter]))
+  (cond
+    (non-empty-clause? (get-in query-dict [:query :filter]))
     (update-in query-dict [:query :filter] segment-parse-filter)
+
+    (non-empty-clause? (get-in query-dict [:query :source-query :filter]))
+    (update-in query-dict [:query :source-query :filter] segment-parse-filter)
+
+    :else
     query-dict))
 
 
@@ -63,8 +69,18 @@
 ;;; |                                                    METRICS                                                     |
 ;;; +----------------------------------------------------------------------------------------------------------------+
 
+(defn- ga-metric?
+  "Is this metric clause not a Metabase Metric, but rather a GA one? E.g. something like [metric ga:users]. We want to
+   ignore those because they're not the same thing at all as MB Metrics and don't correspond to objects in our
+   application DB."
+  [[_ id]]
+  (boolean
+   (when ((some-fn string? keyword?) id)
+     (re-find #"^ga:" (name id)))))
+
 (defn- metric? [aggregation]
-  (is-clause? #{:metric} aggregation))
+  (and (is-clause? #{:metric} aggregation)
+       (not (ga-metric? aggregation))))
 
 (defn- metric-id [metric]
   (when (metric? metric)

@@ -7,30 +7,36 @@ import {
     fetchSegments,
 } from 'metabase/redux/metadata'
 
-import { resetQuery } from '../new_query'
-
+import { withBackground } from 'metabase/hoc/Background'
+import { determineWhichOptionsToShow, resetQuery } from '../new_query'
+import { t } from 'c-3po'
 import LoadingAndErrorWrapper from "metabase/components/LoadingAndErrorWrapper";
 import StructuredQuery from "metabase-lib/lib/queries/StructuredQuery"
 import Metadata from "metabase-lib/lib/metadata/Metadata";
 import { getMetadata, getMetadataFetched } from "metabase/selectors/metadata";
 import NewQueryOption from "metabase/new_query/components/NewQueryOption";
 import NativeQuery from "metabase-lib/lib/queries/NativeQuery";
-import { getCurrentQuery, getPlainNativeQuery } from "metabase/new_query/selectors";
+import { getCurrentQuery, getNewQueryOptions, getPlainNativeQuery } from "metabase/new_query/selectors";
 import { getUserIsAdmin } from "metabase/selectors/user";
+import { push } from "react-router-redux";
+import NoDatabasesEmptyState from "metabase/reference/databases/NoDatabasesEmptyState";
 
 const mapStateToProps = state => ({
     query: getCurrentQuery(state),
     plainNativeQuery: getPlainNativeQuery(state),
     metadata: getMetadata(state),
     metadataFetched: getMetadataFetched(state),
-    isAdmin: getUserIsAdmin(state)
+    isAdmin: getUserIsAdmin(state),
+    newQueryOptions: getNewQueryOptions(state)
 })
 
 const mapDispatchToProps = {
+    determineWhichOptionsToShow,
     fetchDatabases,
     fetchMetrics,
     fetchSegments,
-    resetQuery
+    resetQuery,
+    push
 }
 
 type Props = {
@@ -46,21 +52,40 @@ type Props = {
     isAdmin: boolean,
 
     resetQuery: () => void,
+    determineWhichOptionsToShow: () => void,
 
     fetchDatabases: () => void,
     fetchMetrics: () => void,
     fetchSegments: () => void,
 }
 
+const allOptionsVisibleState = {
+    loaded: true,
+    hasDatabases: true,
+    showMetricOption: true,
+    showTableOption: true,
+    showSQLOption: true
+}
+
 export class NewQueryOptions extends Component {
     props: Props
 
-    componentWillMount() {
-        this.props.fetchDatabases()
-        this.props.fetchMetrics()
-        this.props.fetchSegments()
+    constructor(props) {
+        super(props)
 
+        // By default, show all options instantly to admins
+        this.state = props.isAdmin ? allOptionsVisibleState : {
+            loaded: false,
+            hasDatabases: false,
+            showMetricOption: false,
+            showTableOption: false,
+            showSQLOption: false
+        }
+    }
+
+    async componentWillMount() {
         this.props.resetQuery();
+        this.props.determineWhichOptionsToShow(this.getGuiQueryUrl);
     }
 
     getGuiQueryUrl = () => {
@@ -72,39 +97,34 @@ export class NewQueryOptions extends Component {
     }
 
     render() {
-        const { query, metadata, metadataFetched, isAdmin, metricSearchUrl, segmentSearchUrl } = this.props
+        const { isAdmin, metricSearchUrl, newQueryOptions } = this.props
+        const { loaded, hasDatabases, showMetricOption, showSQLOption } = newQueryOptions
+        const showCustomInsteadOfNewQuestionText = showMetricOption || isAdmin
 
-        if (!query || (!isAdmin && (!metadataFetched.metrics || !metadataFetched.segments))) {
+        if (!loaded) {
             return <LoadingAndErrorWrapper loading={true}/>
         }
 
-        const showMetricOption = isAdmin || metadata.metricsList().length > 0
-        const showSegmentOption = isAdmin || metadata.segmentsList().length > 0
-        const showCustomInsteadOfNewQuestionText = showMetricOption || showSegmentOption
+        if (!hasDatabases) {
+            return (
+                <div className="full-height flex align-center justify-center">
+                    <NoDatabasesEmptyState/>
+                </div>
+            )
+        }
 
         return (
-            <div className="bg-slate-extra-light full-height flex">
+            <div className="full-height flex">
                 <div className="wrapper wrapper--trim lg-wrapper--trim xl-wrapper--trim flex-full px1 mt4 mb2 align-center">
                      <div className="flex align-center justify-center" style={{minHeight: "100%"}}>
-                        <ol className="flex-full Grid Grid--guttersXl Grid--full small-Grid--1of2 large-Grid--normal">
+                        <ol className="flex-full Grid Grid--guttersXl Grid--full sm-Grid--normal">
                             { showMetricOption &&
                                 <li className="Grid-cell">
                                     <NewQueryOption
                                         image="/app/img/questions_illustration"
-                                        title="Metrics"
-                                        description="See data over time, as a map, or pivoted to help you understand trends or changes."
+                                        title={t`Metrics`}
+                                        description={t`See data over time, as a map, or pivoted to help you understand trends or changes.`}
                                         to={metricSearchUrl}
-                                    />
-                                </li>
-                            }
-                            { showSegmentOption &&
-                                <li className="Grid-cell">
-                                    <NewQueryOption
-                                        image="/app/img/list_illustration"
-                                        title="Segments"
-                                        description="Explore tables and see what’s going on underneath your charts."
-                                        width={180}
-                                        to={segmentSearchUrl}
                                     />
                                 </li>
                             }
@@ -112,20 +132,22 @@ export class NewQueryOptions extends Component {
                                 {/*TODO: Move illustrations to the new location in file hierarchy. At the same time put an end to the equal-size-@2x ridicule. */}
                                 <NewQueryOption
                                     image="/app/img/query_builder_illustration"
-                                    title={ showCustomInsteadOfNewQuestionText ? "Custom" : "New question"}
-                                    description="Use the simple query builder to see trends, lists of things, or to create your own metrics."
+                                    title={ showCustomInsteadOfNewQuestionText ? t`Custom` : t`New question`}
+                                    description={t`Use the simple question builder to see trends, lists of things, or to create your own metrics.`}
                                     width={180}
                                     to={this.getGuiQueryUrl}
                                 />
                             </li>
-                            <li className="Grid-cell">
-                                <NewQueryOption
-                                    image="/app/img/sql_illustration"
-                                    title="SQL"
-                                    description="For more complicated questions, you can write your own SQL."
-                                    to={this.getNativeQueryUrl}
-                                />
-                            </li>
+                            { showSQLOption &&
+                                <li className="Grid-cell">
+                                    <NewQueryOption
+                                        image="/app/img/sql_illustration"
+                                        title={t`Native query`}
+                                        description={t`For more complicated questions, you can write your own SQL or native query.`}
+                                        to={this.getNativeQueryUrl}
+                                    />
+                                </li>
+                            }
                         </ol>
                     </div>
                 </div>
@@ -134,4 +156,4 @@ export class NewQueryOptions extends Component {
     }
 }
 
-export default connect(mapStateToProps, mapDispatchToProps)(NewQueryOptions)
+export default connect(mapStateToProps, mapDispatchToProps)(withBackground('bg-slate-extra-light')(NewQueryOptions))

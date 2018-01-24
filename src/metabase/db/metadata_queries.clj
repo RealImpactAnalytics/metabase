@@ -7,22 +7,25 @@
             [metabase.models
              [field-values :as field-values]
              [table :refer [Table]]]
+            [metabase.query-processor.interface :as qpi]
             [metabase.query-processor.middleware.expand :as ql]
             [toucan.db :as db]))
 
 (defn- qp-query [db-id query]
   {:pre [(integer? db-id)]}
-  (-> (qp/process-query
-       {:type     :query
-        :database db-id
-        :query    query})
+  (-> (binding [qpi/*disable-qp-logging* true]
+        (qp/process-query
+          {:type     :query
+           :database db-id
+           :query    query}))
       :data
       :rows))
 
 (defn- field-query [{table-id :table_id} query]
   {:pre [(integer? table-id)]}
   (qp-query (db/select-one-field :db_id Table, :id table-id)
-            ;; this seeming useless `merge` statement IS in fact doing something important. `ql/query` is a threading macro for building queries. Do not remove
+            ;; this seeming useless `merge` statement IS in fact doing something important. `ql/query` is a threading
+            ;; macro for building queries. Do not remove
             (ql/query (merge query)
                       (ql/source-table table-id))))
 
@@ -72,25 +75,3 @@
   (or (:db_id x)
       (:database_id x)
       (db/select-one-field :db_id 'Table :id (:table_id x))))
-
-(defn field-values
-  "Return all the values of FIELD for QUERY."
-  [field query]
-  (->> (qp/process-query
-         {:type     :query
-          :database (db-id field)
-          :query    (merge {:fields       [[:field-id (:id field)]]
-                            :source-table (:table_id field)}
-                           query)})
-       :data
-       :rows
-       (map first)))
-
-(defn query-values
-  "Return all values for QUERY."
-  [db-id query]
-  (-> (qp/process-query
-        {:type     :query
-         :database db-id
-         :query    query})
-      :data))
